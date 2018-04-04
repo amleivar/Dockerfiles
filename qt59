@@ -1,0 +1,140 @@
+FROM ubuntu:16.04
+MAINTAINER camdev:amleivar
+
+LABEL description="A linux C++ run environment for SD voss"
+
+RUN apt-get update && apt-get install --no-install-recommends -y \
+	software-properties-common \
+	python-software-properties \
+&& add-apt-repository ppa:beineri/opt-qt594-xenial
+
+RUN apt-get update && apt-get install --no-install-recommends -y \
+	unzip \
+	wget \
+	curl \
+	subversion \
+	git \
+	sqlite3 \
+	gcc \
+	g++ \
+	cmake \
+	libtool \
+	automake \
+	pkg-config \
+	libssl-dev \
+	libcurl4-openssl-dev \
+	openssh-client \
+	libgssdp-1.0-dev \
+	libsqlite3-dev \
+	libmosquittopp-dev \
+	libgtk2.0-dev \
+	libmicrohttpd-dev \
+	libqrencode-dev \
+	libgstreamer-plugins-base1.0-dev \
+	libboost-dev \
+	qt59-meta-full \
+	qt59creator \
+	mesa-common-dev \
+	libglu1-mesa-dev \
+	libpulse-dev \
+&& rm -rf /var/lib/apt/lists/*
+	
+ENV QT_BASE_DIR=/opt/qt59
+ENV QTDIR=$QT_BASE_DIR
+ENV PATH=$QT_BASE_DIR/bin:$PATH
+ENV LD_LIBRARY_PATH=$QT_BASE_DIR/lib/x86_64-linux-gnu:$QT_BASE_DIR/lib:$LD_LIBRARY_PATH
+ENV PKG_CONFIG_PATH=/opt/devTools/lib/pkgconfig:$QT_BASE_DIR/lib/pkgconfig:$PKG_CONFIG_PATH
+	
+RUN mkdir -p /opt/devTools/include; \
+	mkdir -p /opt/devTools/lib; \
+	mkdir -p /opt/devTools/lib64; \
+	mkdir /opt/SDSW
+	
+# qmqtt
+RUN cd /tmp; \
+	git config --global http.sslVerify false; \
+	git clone https://github.com/emqtt/qmqtt.git; \
+	cd qmqtt; \
+	$QTDIR/bin/qmake; \
+	make install
+	
+# qxmpp
+RUN cd /tmp; \
+	git config --global http.sslVerify false; \
+	git clone https://github.com/amleivar/qxmpp.git; \
+	cd qxmpp; \
+	$QTDIR/bin/qmake "PREFIX=$QTDIR"; \
+	make install
+  
+# qtvirtualkeyboard
+RUN cd /tmp; \
+        git config --global http.sslVerify false; \
+        git clone --branch v5.9.4 http://code.qt.io/cgit/qt/qtvirtualkeyboard.git/; \
+        cd qtvirtualkeyboard; \
+        $QTDIR/bin/qmake "PREFIX=$QTDIR"; \
+        make install
+	
+# qt-gstreamer
+RUN cd /tmp; \
+	git config --global http.sslVerify false; \
+	git clone https://github.com/amleivar/qt-gstreamer.git; \
+	cd qt-gstreamer; \
+	cmake -DQT_VERSION=5 -DCMAKE_PREFIX_PATH=$QTDIR -DCMAKE_INSTALL_PREFIX:PATH=/opt/devTools .; \
+	make all install
+  
+# Google test
+RUN cd /tmp; \
+	git config --global http.sslVerify false; \
+	git clone https://github.com/google/googletest.git; \
+	cd googletest; \
+	git checkout tags/release-1.8.0; \
+	cmake -DCMAKE_INSTALL_PREFIX:PATH=/opt/devTools .; \
+	make all install
+  
+# curlPP
+RUN cd /tmp; \
+	git clone https://github.com/jpbarrette/curlpp.git; \
+	cd curlpp; \
+	git checkout tags/v0.8.1; \
+	cmake -DCMAKE_INSTALL_PREFIX:PATH=/opt/devTools .; \
+	make all install
+  
+# libhttpserver
+RUN cd /tmp; \
+	git clone https://github.com/etr/libhttpserver; \
+	cd libhttpserver; \
+	git checkout tags/v0.11.1; \
+	./bootstrap; \
+	mkdir build; \
+	cd build; \
+	../configure CPPFLAGS="-I/opt/devTools/include/" LDFLAGS="-L/opt/devTools/lib/" --prefix=/opt/devTools/; \
+	LD_LIBRARY_PATH="/opt/devTools/lib/" make install; \
+	rm -rf /opt/devTools/share
+  
+# aws-sdk-cpp
+RUN cd /tmp; \
+	git clone https://github.com/aws/aws-sdk-cpp.git; \
+	cd aws-sdk-cpp; \
+	git checkout tags/1.1.19; \
+	cd ..; \
+	mkdir aws-sdk-cpp-build; \
+	cd aws-sdk-cpp-build; \
+	cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_ONLY="s3;sqs;sns;lambda;dynamodb;kinesis;kinesisanalytics;firehose" -DCMAKE_INSTALL_PREFIX:PATH=/opt/devTools ../aws-sdk-cpp; \
+	make all install
+	
+# Clean
+RUN cd /tmp; \
+	rm -rf *
+	
+RUN export uid=1000 gid=1000 && \
+    mkdir -p /home/developer && \
+    echo "developer:x:${uid}:${gid}:Developer,,,:/home/developer:/bin/bash" >> /etc/passwd && \
+    echo "developer:x:${uid}:" >> /etc/group && \
+    mkdir -p /etc/sudoers.d && \
+    echo "developer ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/developer && \
+    chmod 0440 /etc/sudoers.d/developer && \
+    chown ${uid}:${gid} -R /home/developer
+
+USER developer
+ENV HOME /home/developer
+CMD /opt/qt59/bin/qtcreator
